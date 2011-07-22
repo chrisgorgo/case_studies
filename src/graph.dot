@@ -1,0 +1,7 @@
+strict digraph  {
+	"preproc_func." -> "report.";
+	"preproc_func." -> "model.";
+	"inputnode.interfaces" -> "report.";
+	"inputnode.interfaces" -> "preproc_func.";
+	"model." -> "report.";
+}

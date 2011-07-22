@@ -1,0 +1,19 @@
+digraph structs {
+node [shape=record];
+line_bisectioninputnode [label="{IN}|{ inputnode | interfaces |  }|{OUT|<outfunc> func|<outstruct> struct}"];
+line_bisectionpreproc_func [label="{IN|<ininputnodefunc> inputnode.func|<ininputnodestruct> inputnode.struct}|{ preproc_func |  |  }|{OUT|<outrealignrealignmentparameters> realign.realignment_parameters|<outsmoothsmoothedfiles> smooth.smoothed_files|<outartoutlierfiles> art.outlier_files|<outcomputemaskbrainmask> compute_mask.brain_mask|<outplotrealignplot> plot_realign.plot}"];
+line_bisectionmodel [label="{IN|<ininputnoderealignmentparameters> inputnode.realignment_parameters|<ininputnodefunctionalruns> inputnode.functional_runs|<ininputnodeoutlierfiles> inputnode.outlier_files|<ininputnodemask> inputnode.mask}|{ model |  |  }|{OUT|<outcontrastestimatespmTimages> contrastestimate.spmT_images|<outlevel1estimatemaskimage> level1estimate.mask_image|<outthresholdthresholdedmap> threshold.thresholded_map|<outthresholdtopoggmmtopofdrthresholdedmap> threshold_topo_ggmm.topo_fdr.thresholded_map}"];
+line_bisectionreport [label="{IN|<ininputnodestruct> inputnode.struct|<ininputnoderawstatimages> inputnode.raw_stat_images|<ininputnodemask> inputnode.mask|<ininputnodethresholdedstatimages> inputnode.thresholded_stat_images|<ininputnodeggmmthresholdedstatimages> inputnode.ggmm_thresholded_stat_images|<ininputnodeplotrealign> inputnode.plot_realign}|{ report |  |  }|{OUT}"];
+line_bisectioninputnode:outfunc:e -> line_bisectionpreproc_func:ininputnodefunc:w;
+line_bisectioninputnode:outstruct:e -> line_bisectionpreproc_func:ininputnodestruct:w;
+line_bisectionpreproc_func:outrealignrealignmentparameters:e -> line_bisectionmodel:ininputnoderealignmentparameters:w;
+line_bisectionpreproc_func:outsmoothsmoothedfiles:e -> line_bisectionmodel:ininputnodefunctionalruns:w;
+line_bisectionpreproc_func:outartoutlierfiles:e -> line_bisectionmodel:ininputnodeoutlierfiles:w;
+line_bisectionpreproc_func:outcomputemaskbrainmask:e -> line_bisectionmodel:ininputnodemask:w;
+line_bisectioninputnode:outstruct:e -> line_bisectionreport:ininputnodestruct:w;
+line_bisectionmodel:outcontrastestimatespmTimages:e -> line_bisectionreport:ininputnoderawstatimages:w;
+line_bisectionmodel:outlevel1estimatemaskimage:e -> line_bisectionreport:ininputnodemask:w;
+line_bisectionmodel:outthresholdthresholdedmap:e -> line_bisectionreport:ininputnodethresholdedstatimages:w;
+line_bisectionmodel:outthresholdtopoggmmtopofdrthresholdedmap:e -> line_bisectionreport:ininputnodeggmmthresholdedstatimages:w;
+line_bisectionpreproc_func:outplotrealignplot:e -> line_bisectionreport:ininputnodeplotrealign:w;
+}
