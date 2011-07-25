@@ -154,47 +154,47 @@ get_onsets.inputs.delay = 4*2.5
 main_pipeline = pe.Workflow(name="pipeline")
 main_pipeline.base_dir = working_dir
 
-reslice_roi_mask = pe.Node(interface=spm.Coregister(), name="reslice_roi_mask")
-reslice_roi_mask.inputs.jobtype="write"
-reslice_roi_mask.inputs.write_interp = 0
-reslice_roi_mask.inputs.target = "/media/data/2010reliability/episize.nii"
-
-def dilateROIMask(filename, dilation_size):
-    import numpy as np
-    import nibabel as nb
-    from scipy.ndimage.morphology import grey_dilation
-    import os
-    
-    nii = nb.load(filename)
-    origdata = nii.get_data()
-    newdata = grey_dilation(origdata , (2 * dilation_size + 1,
-                                       2 * dilation_size + 1,
-                                       2 * dilation_size + 1))
-    nb.save(nb.Nifti1Image(newdata, nii.get_affine(), nii.get_header()), 'dialted_mask.nii')
-    return os.path.abspath('dialted_mask.nii')
-
-dilate_roi_mask = pe.Node(interface=util.Function(input_names=['filename', 'dilation_size'], 
-                                                  output_names=['dilated_file'],
-                                                  function=dilateROIMask),
-                          name = 'dilate_roi_mask')
-
-def getMaskFile(subject_id, task_name):
-    from variables import design_parameters, lefties
-    if subject_id in lefties and task_name == "finger_foot_lips":
-        return design_parameters[task_name]['mask_file'].replace("left", "right")
-    else:
-        return design_parameters[task_name]['mask_file']
-    
-get_mask_file = pe.Node(interface=util.Function(function=getMaskFile,
-                                                input_names=['subject_id', 'task_name'],
-                                                output_names = "mask_file"),
-                        name="get_mask_file")
-main_pipeline.connect([(tasks_infosource, get_mask_file, [('task_name', 'task_name')]),
-                       (subjects_infosource, get_mask_file, [('subject_id', 'subject_id')]),
-                       (get_mask_file, dilate_roi_mask, [('mask_file', 'filename')]),
-                       (tasks_infosource, dilate_roi_mask, [(('task_name', getDilation), 'dilation_size')]),
-                       (dilate_roi_mask, reslice_roi_mask, [('dilated_file',"source")]),
-                       ])
+#reslice_roi_mask = pe.Node(interface=spm.Coregister(), name="reslice_roi_mask")
+#reslice_roi_mask.inputs.jobtype="write"
+#reslice_roi_mask.inputs.write_interp = 0
+#reslice_roi_mask.inputs.target = "/media/data/2010reliability/episize.nii"
+#
+#def dilateROIMask(filename, dilation_size):
+#    import numpy as np
+#    import nibabel as nb
+#    from scipy.ndimage.morphology import grey_dilation
+#    import os
+#    
+#    nii = nb.load(filename)
+#    origdata = nii.get_data()
+#    newdata = grey_dilation(origdata , (2 * dilation_size + 1,
+#                                       2 * dilation_size + 1,
+#                                       2 * dilation_size + 1))
+#    nb.save(nb.Nifti1Image(newdata, nii.get_affine(), nii.get_header()), 'dialted_mask.nii')
+#    return os.path.abspath('dialted_mask.nii')
+#
+#dilate_roi_mask = pe.Node(interface=util.Function(input_names=['filename', 'dilation_size'], 
+#                                                  output_names=['dilated_file'],
+#                                                  function=dilateROIMask),
+#                          name = 'dilate_roi_mask')
+#
+#def getMaskFile(subject_id, task_name):
+#    from variables import design_parameters, lefties
+#    if subject_id in lefties and task_name == "finger_foot_lips":
+#        return design_parameters[task_name]['mask_file'].replace("left", "right")
+#    else:
+#        return design_parameters[task_name]['mask_file']
+#    
+#get_mask_file = pe.Node(interface=util.Function(function=getMaskFile,
+#                                                input_names=['subject_id', 'task_name'],
+#                                                output_names = "mask_file"),
+#                        name="get_mask_file")
+#main_pipeline.connect([(tasks_infosource, get_mask_file, [('task_name', 'task_name')]),
+#                       (subjects_infosource, get_mask_file, [('subject_id', 'subject_id')]),
+#                       (get_mask_file, dilate_roi_mask, [('mask_file', 'filename')]),
+#                       (tasks_infosource, dilate_roi_mask, [(('task_name', getDilation), 'dilation_size')]),
+#                       (dilate_roi_mask, reslice_roi_mask, [('dilated_file',"source")]),
+#                       ])
 
 
 
@@ -203,7 +203,7 @@ main_pipeline.connect([(subjects_infosource, datasource, [('subject_id', 'subjec
                        
                        (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
                                                                 ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
-                       (roi_infosource, functional_run, [('roi', 'model.roi_inputspec.roi')]),
+                       #(roi_infosource, functional_run, [('roi', 'model.roi_inputspec.roi')]),
                        (datasource, functional_run, [("func", "inputnode.func"),
                                                      ("T1","inputnode.struct")]),
                        (tasks_infosource, functional_run, [(('task_name', getConditions), 'inputnode.conditions'),
@@ -214,7 +214,7 @@ main_pipeline.connect([(subjects_infosource, datasource, [('subject_id', 'subjec
                                                                          (('task_name', getOnsets), 'inputnode.onsets'),
                                                                          (('task_name', getSparse), 'inputnode.sparse'),
                                                                          ('task_name', 'inputnode.task_name')]),
-                       (reslice_roi_mask, functional_run, [('coregistered_source','inputnode.mask_file')]),                       
+                       #(reslice_roi_mask, functional_run, [('coregistered_source','inputnode.mask_file')]),                       
 
                        (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                        (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
