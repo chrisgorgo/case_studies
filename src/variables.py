@@ -139,12 +139,12 @@ data_dir = '/media/data/case_studies/data'
 results_dir = "/home/filo/workspace/case_studies/results"
 working_dir = '/media/data/case_studies/workdir_fmri'
 dbfile = os.path.join(results_dir, "results.db")
-tasks = ["finger_foot_lips"]#, "covert_verb_generation"]#, "overt_word_repetition", 'overt_verb_generation']#"line_bisection"]# 'overt_verb_generation', "covert_verb_generation", "finger_foot_lips", "overt_word_repetition"]#, "]
+tasks = ["finger_foot_lips", "covert_verb_generation", "overt_word_repetition"]#, 'overt_verb_generation']#"line_bisection"]# 'overt_verb_generation', "covert_verb_generation", "finger_foot_lips", "overt_word_repetition"]#, "]
 thr_methods = ['topo_fdr','topo_ggmm']
 sessions = ['first', 'second']
 roi = [False]#,False]
 
-subjects = ['CaseStudy02']
+subjects = ['CaseStudy03']
 
 lefties = []
 

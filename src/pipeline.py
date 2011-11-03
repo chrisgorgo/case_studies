@@ -45,13 +45,13 @@ functional_run = create_pipeline_functional_run(name="functional_run", series_fo
 
 datasink = pe.Node(interface = DataSink(), name='datasink')
 datasink.inputs.base_directory = results_dir
-datasink.inputs.regexp_substitutions = [
-                                        #(r'(?P<root>/home/filo/workspace/2010reliability/results/)(?P<b1>.*)(?P<subject_id>_subject_id.*/)(?P<b2>.*)(?P<task_name>_task_name.*/)(?P<b3>.*)',
-                                        # r'\g<root>\g<task_name>\g<b1>\g<b2>\g<subject_id>\g<b3>'),
-                                        (r'(?P<r1>_[^-/]*)(?P<id>[0-9]+)(?P<r2>[/])', r'/\g<id>'),
-                                        #(r'_task_name_', r''),
-                                        #(r'(?P<subject_id>_subject_id[^/]*)([/])', r'\g<subject_id>_')
-                                        ]
+#datasink.inputs.regexp_substitutions = [
+#                                        #(r'(?P<root>/home/filo/workspace/2010reliability/results/)(?P<b1>.*)(?P<subject_id>_subject_id.*/)(?P<b2>.*)(?P<task_name>_task_name.*/)(?P<b3>.*)',
+#                                        # r'\g<root>\g<task_name>\g<b1>\g<b2>\g<subject_id>\g<b3>'),
+#                                        (r'(?P<r1>_[^-/]*)(?P<id>[0-9]+)(?P<r2>[/])', r'/\g<id>'),
+#                                        #(r'_task_name_', r''),
+#                                        #(r'(?P<subject_id>_subject_id[^/]*)([/])', r'\g<subject_id>_')
+#                                        ]
 
 #sqlitesink = pe.MapNode(interface = SQLiteSink(input_names=["subject_id",
 #                                                            "session",
