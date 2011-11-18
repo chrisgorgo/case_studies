@@ -4,11 +4,14 @@ import nipype.interfaces.io as nio           # Data i/o
 import nipype.interfaces.spm as spm
 import nipype.interfaces.matlab as mlab      # how to run matlab
 import nipype.interfaces.fsl as fsl
-from helper_functions import (create_pipeline_functional_run)
+from helper_functions import (create_pipeline_functional_run, create_dti_workflow)
 
 from StringIO import StringIO
 from nipype.interfaces.io import DataSink, SQLiteSink
 from variables import *
+from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
+from neuroutils.nii2dcm import Nifti2DICOM
+from nipype.utils.filemanip import split_filename
 
 mlab.MatlabCommand.set_default_paths("/usr/share/spm8/")
 
@@ -30,16 +33,33 @@ roi_infosource = pe.Node(interface=util.IdentityInterface(fields=['roi']),
 roi_infosource.iterables = ('roi', roi)
 
 datasource = pe.Node(interface=nio.DataGrabber(infields=['subject_id', 'task_name'],
-                                               outfields=['func', 'T1']),
+                                               outfields=['func']),
                      name = 'datasource')
 
 datasource.inputs.base_directory = data_dir
-datasource.inputs.template = '%s/*[0-9]_%s*.nii'
-datasource.inputs.template_args = dict(func = [['subject_id', 'task_name']],
-                                       T1 = [['subject_id', 'o_COR_3D_IR_PREP']])
+datasource.inputs.template = '%s/*[0-9]_%s*%s'
+datasource.inputs.template_args = dict(func = [['subject_id', 'task_name', '.nii']],
+                                       )
 datasource.inputs.sort_filelist = True
 
+struct_datasource = pe.Node(interface=nio.DataGrabber(infields=['subject_id'],
+                                               outfields=['T1', 'dwi', 'bvecs', 'bvals', 'T2']),
+                     name = 'struct_datasource')
+
+struct_datasource.inputs.base_directory = data_dir
+struct_datasource.inputs.template = '%s/*[0-9]_%s*%s'
+struct_datasource.inputs.template_args = dict(T1 = [['subject_id', 'o_COR_3D_IR_PREP', '.nii']],
+                                       dwi = [['subject_id', 'DTI_64G_2.0_mm_isotropic', '.nii']],
+                                       T2 = [['subject_id', 'o_Axial_T2', '.nii']],
+                                       bvecs = [['subject_id', 'DTI_64G_2.0_mm_isotropic', '.bvec']],
+                                       bvals = [['subject_id', 'DTI_64G_2.0_mm_isotropic', '.bval']],
+                                       )
+struct_datasource.inputs.sort_filelist = True
+
 functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
+
+diffusion_run = create_mrtrix_dti_pipeline()
+diffusion_run_dtk = create_dti_workflow()
 
 
 
@@ -196,29 +216,72 @@ main_pipeline.base_dir = working_dir
 #                       (dilate_roi_mask, reslice_roi_mask, [('dilated_file',"source")]),
 #                       ])
 
+coregister_T2 = pe.Node(interface=spm.Coregister(), name="coregister_T2")
+coregister_T2.inputs.jobtype="estwrite"
 
+nii2dcm = pe.Node(interface=Nifti2DICOM(), name="nii2dcm")
+nii2dcm.inputs.overlay = True
+nii2dcm.inputs.UID_suffix = 100
+dicom_datasource = pe.Node(interface=nio.DataGrabber(infields=['subject_id', 'struct_seq', 'func_seq'],
+                                                     outfields=['struct_dicoms', 'func_dicoms']),
+                           name = 'dicom_datasource')
+
+dicom_datasource.inputs.base_directory = data_dir
+dicom_datasource.inputs.template = '%s/%d/*.dcm'
+dicom_datasource.inputs.template_args = dict(struct_dicoms = [['subject_id', 'struct_seq']],
+                                              func_dicoms = [['subject_id', 'func_seq']]
+                                              )
+
+def get_seq(filename):
+    from nipype.utils.filemanip import split_filename
+    _, base, _ = split_filename(filename)
+    out = []
+    for letter in base:
+        if letter in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
+            out.append(letter)
+        else:
+            break
+    return int(''.join(out))
 
 main_pipeline.connect([(subjects_infosource, datasource, [('subject_id', 'subject_id')]),
+                       (subjects_infosource, struct_datasource, [('subject_id', 'subject_id')]),
+                       (subjects_infosource, dicom_datasource, [('subject_id', 'subject_id')]),
+                       (struct_datasource, coregister_T2, [('T1', 'target'),
+                                                           ('T2', 'source')]),
+                       (struct_datasource, dicom_datasource, [(('T1', get_seq), 'struct_seq')]),
+                       (datasource, dicom_datasource, [(("func", get_seq), "func_seq")]),
+                       
                        (tasks_infosource, datasource, [('task_name', 'task_name')]),
                        
                        (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
                                                                 ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
                        #(roi_infosource, functional_run, [('roi', 'model.roi_inputspec.roi')]),
-                       (datasource, functional_run, [("func", "inputnode.func"),
-                                                     ("T1","inputnode.struct")]),
+                       (datasource, functional_run, [("func", "inputnode.func")]),
+                       (struct_datasource, functional_run, [("T1","inputnode.struct")]),
                        (tasks_infosource, functional_run, [(('task_name', getConditions), 'inputnode.conditions'),
-                                                                         (('task_name', getDurations), 'inputnode.durations'),
+                                                            (('task_name', getDurations), 'inputnode.durations'),
                                                                          (('task_name', getTR), 'inputnode.TR'),
                                                                          (('task_name', getContrasts), 'inputnode.contrasts'),
                                                                          (('task_name', getUnits), 'inputnode.units'),
                                                                          (('task_name', getOnsets), 'inputnode.onsets'),
                                                                          (('task_name', getSparse), 'inputnode.sparse'),
                                                                          ('task_name', 'inputnode.task_name')]),
+#                       (struct_datasource, diffusion_run, [('dwi', 'inputnode.dwi'),
+#                                                    ('bvecs', 'inputnode.bvecs'),
+#                                                    ('bvals', 'inputnode.bvals'),]),
+                       (struct_datasource, diffusion_run_dtk, [('dwi', 'inputnode.dwi'),
+                                                        ('bvecs', 'inputnode.bvecs'),
+                                                        ('bvals', 'inputnode.bvals'),
+                                                        ('T1', 'inputnode.struct')]),
+                       
                        #(reslice_roi_mask, functional_run, [('coregistered_source','inputnode.mask_file')]),                       
 
                        (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
+                       (dicom_datasource, nii2dcm, [('struct_dicoms', 'template_DICOMS'),
+                                                    ('func_dicoms', 'series_info_source_dicom')]),
+                       (functional_run, nii2dcm, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'nifti_file')]),
                        (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
-                       (datasource, datasink, [("T1","volumes.T1")]),
+                       #(datasource, datasink, [("T1","volumes.T1")]),
                        
                        (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
 #                       (functional_run, datasink, [('preproc_func.pre_ica.report_dir', 'reports.pre_ica')]),

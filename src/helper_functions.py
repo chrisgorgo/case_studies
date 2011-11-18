@@ -15,6 +15,7 @@ from nipype.workflows.fsl import create_bedpostx_pipeline, create_eddy_correct_p
 
 import numpy as np
 from nipype.algorithms.misc import PickAtlas
+from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
 
 fsl.FSLCommand.set_default_output_type('NIFTI')
 
@@ -502,6 +503,119 @@ def create_pipeline_functional_run(name="functional_run", series_format="3d"):#,
                       ])
     return pipeline
     
+
+import nipype.interfaces.io as nio           # Data i/o
+import nipype.interfaces.fsl as fsl          # fsl
+import nipype.workflows.fsl as fsl_wf          # fsl
+import nipype.interfaces.diffusion_toolkit as dtk
+import nipype.interfaces.utility as util     # utility
+import nipype.pipeline.engine as pe          # pypeline engine
+import os                                    # system functions
+    
+def create_dti_workflow(name="dt_workflow"):
+    inputnode = pe.Node(interface=util.IdentityInterface(fields=['dwi', 'bvals', 'bvecs', 'struct']), name="inputnode")
+    computeTensor = pe.Workflow(name='computeTensor')
+
+    """
+    extract the volume with b=0 (nodif_brain)
+    """
+    
+    fslroi = pe.Node(interface=fsl.ExtractROI(),name='fslroi')
+    fslroi.inputs.t_min=0
+    fslroi.inputs.t_size=1
+    
+    
+    coregister = pe.Node(interface=spm.Coregister(), name='coregister')
+    coregister.inputs.jobtype='estwrite'
+    
+    """
+    create a brain mask from the nodif_brain
+    """
+    
+    bet = pe.Node(interface=fsl.BET(),name='bet')
+    bet.inputs.mask=True
+    bet.inputs.frac=0.34
+
+#    segment = pe.Node(interface=spm.Segment(), name='segment')
+#    computeTensor.connect([(inputnode, segment, [('struct', 'data')])])
+    
+    split = pe.Node(fsl.Split(dimension='t'), name="split")
+    computeTensor.connect([(inputnode, split, [("dwi", "in_file")])])
+    
+    def remove_first(l):
+        return l[1:]
+    
+    eddie_coregistration = pe.MapNode(fsl.FLIRT(no_search=True, padding_size=1), name = "eddie_coregistration", iterfield=["in_file"])
+    computeTensor.connect([(split, eddie_coregistration, [(("out_files",remove_first), "in_file")]),
+                           (coregister, eddie_coregistration, [("coregistered_source", "reference")])])
+    
+    
+    join = pe.Node(util.Merge(2), name="join")
+    computeTensor.connect([(coregister, join, [("coregistered_source", "in1")]),
+                           (eddie_coregistration, join, [("out_file", "in2")])
+                           ])
+    
+    merge = pe.Node(fsl.Merge(dimension="t"), name="merge")
+    computeTensor.connect([(join, merge, [("out", "in_files")])
+                      ])
+    
+    """
+    compute the diffusion tensor in each voxel
+    """
+    
+    dtifit = pe.Node(interface=dtk.DTIRecon(),name='dtifit')
+    
+    """
+    connect all the nodes for this workflow
+    """
+    
+    computeTensor.connect([
+                            (fslroi, coregister, [('roi_file','source')]),
+                            (inputnode, coregister, [('struct', 'target')]),
+                            (inputnode, bet,[('struct','in_file')]),
+#                            (merge,dtifit,[('merged_file','DWI')])
+                          ])
+    
+
+    
+    """
+    Setup for Tracktography
+    -----------------------
+    Here we will create a workflow to enable deterministic tracktography
+    """
+    
+    tractography = pe.Workflow(name='tractography')
+    
+    dtk_tracker = pe.Node(interface=dtk.DTITracker(), name="dtk_tracker")
+    dtk_tracker.inputs.invert_x = True
+    
+    smooth_trk = pe.Node(interface=dtk.SplineFilter(), name="smooth_trk")
+    smooth_trk.inputs.step_length = 0.5
+    """
+    connect all the nodes for this workflow
+    """
+    
+    tractography.connect([
+                          (dtk_tracker, smooth_trk, [('track_file', 'track_file')])
+                          ])
+    
+    mrtrix = create_mrtrix_dti_pipeline('mrtrix',False) 
+    
+    dwiproc = pe.Workflow(name=name)
+    dwiproc.connect([
+                     (inputnode, computeTensor,[('dwi','fslroi.in_file'),
+#                                                   ('bvals','dtifit.bvals'),
+#                                                   ('bvecs','dtifit.bvecs')
+                                                   ]),
+                     (inputnode,mrtrix, [('bvals','inputnode.bvals'),
+                                                   ('bvecs','inputnode.bvecs')]),
+                     (computeTensor, mrtrix, [('merge.merged_file', 'inputnode.dwi'),
+#                                              ('segment.native_wm_image', 'inputnode.seed_file'),
+                                              ('bet.mask_file', 'inputnode.mask_file')]),
+#                     (computeTensor, tractography,[('bet.mask_file','dtk_tracker.mask1_file'),
+#                                                  ('dtifit.tensor','dtk_tracker.tensor_file')])
+                    ])
+    return dwiproc
 
 def create_bootstrap_estimation(name, conditions, onsets, durations, tr, contrasts, units='scans', n_slices=30, sparse=False, n_skip=4, samples=500):
     
