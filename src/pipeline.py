@@ -6,6 +6,7 @@ import nipype.interfaces.matlab as mlab      # how to run matlab
 from helper_functions import create_pipeline_functional_run
 
 from variables import *
+from exclude_patients import exclude_patients
 #from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
 from neuroutils.nii2dcm import Nifti2DICOM
 from analyze_dicoms import analyze_dicoms
@@ -139,7 +140,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     nii2dcm.inputs.UID_suffix = 100
     
     main_pipeline.connect([(T12nii, coregister_T2, [('reoriented_files', 'target')]),
-                           (T22nii, coregister_T2, [('reoriented_files', 'source')]),
+                           (T22nii, coregister_T2, [('converted_files', 'source')]),
                            
                            (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
                                                                     ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
@@ -171,6 +172,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
 if __name__ == '__main__':
     patients = analyze_dicoms(data_dir)
     for patient_info in patients.values():
+        if patient_info['name'] in exclude_patients:
+            continue
         if 'line_bisection' in patient_info['tasks']:
             patient_info['tasks'].pop('line_bisection')
         main_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
