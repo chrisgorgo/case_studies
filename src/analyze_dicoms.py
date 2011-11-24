@@ -40,5 +40,4 @@ def analyze_dicoms(sdir):
         
         patients[cur_patient['name']] = cur_patient
         
-        
-        return patients
+    return patients
