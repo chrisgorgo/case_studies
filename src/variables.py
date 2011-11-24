@@ -135,7 +135,7 @@ def getStatLabels(task_name):
     from variables import design_parameters
     return [contrast[0] for contrast in design_parameters[task_name]['contrasts']]
 
-data_dir = '/media/data/case_studies/data'
+data_dir = '/media/data/case_studies/data/E10800_TUMOUR'
 results_dir = "/home/filo/workspace/case_studies/results"
 working_dir = '/media/data/case_studies/workdir_fmri'
 dbfile = os.path.join(results_dir, "results.db")
@@ -159,5 +159,5 @@ stop_on_first_crash = true
 stop_on_first_rerun = false
 hash_method = timestamp
 remove_unnecessary_outputs = false
-plugin = MultiProc
+#plugin = MultiProc
 """))

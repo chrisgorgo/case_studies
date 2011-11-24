@@ -15,7 +15,7 @@ from nipype.workflows.fsl import create_bedpostx_pipeline, create_eddy_correct_p
 
 import numpy as np
 from nipype.algorithms.misc import PickAtlas
-from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
+#from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
 
 fsl.FSLCommand.set_default_output_type('NIFTI')
 
