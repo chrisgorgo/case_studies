@@ -17,8 +17,11 @@ mlab.MatlabCommand.set_default_paths("/usr/share/spm8/")
 
 def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patient_info):
     
+    #identifier = patient_info['name'].replace(" ", "_"
+    identifier = str(patient_info['StudyID'])
+    
     main_pipeline = pe.Workflow(name="pipeline")
-    main_pipeline.base_dir = os.path.join(work_dir, patient_info['name'].replace(" ", "_"))
+    main_pipeline.base_dir = os.path.join(work_dir, identifier)
 
     tasks_infosource = pe.Node(interface=util.IdentityInterface(fields=['task_name']),
                                name="tasks_infosource")
@@ -52,6 +55,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     func2nii = pe.Node(interface = Dcm2nii(), name="func2nii")
     func2nii.inputs.gzip_output = False
     func2nii.inputs.nii_output = True
+    func2nii.inputs.anonymize = True
     
     def pickFirst(l):
         return l[0]
@@ -88,7 +92,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
 
     datasink = pe.Node(interface = nio.DataSink(), name='datasink')
-    datasink.inputs.base_directory = os.path.join(results_dir, patient_info['name'].replace(" ", "_"))
+    datasink.inputs.base_directory = os.path.join(results_dir, identifier)
     
     def getReportFilename(subject_id):
         return "subject_%s_report.pdf"%subject_id
@@ -134,10 +138,10 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     coregister_T2 = pe.Node(interface=spm.Coregister(), name="coregister_T2")
     coregister_T2.inputs.jobtype="estwrite"
     
-    nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
-                         name="nii2dcm")
-    nii2dcm.inputs.overlay = True
-    nii2dcm.inputs.UID_suffix = 100
+#    nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
+#                         name="nii2dcm")
+#    nii2dcm.inputs.overlay = True
+#    nii2dcm.inputs.UID_suffix = 100
     
     main_pipeline.connect([(T12nii, coregister_T2, [('reoriented_files', 'target')]),
                            (T22nii, coregister_T2, [('converted_files', 'source')]),
@@ -155,24 +159,24 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                                                                 (('task_name', getSparse), 'inputnode.sparse'),
                                                                 ('task_name', 'inputnode.task_name')]),                     
                            
-                           (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
-                           (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
-                           (struct_datasource, nii2dcm, [('T1', 'template_DICOMS')]),
-                           (functional_run, nii2dcm, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'nifti_file')]),
+#                           (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
+#                           (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
+#                           (struct_datasource, nii2dcm, [('T1', 'template_DICOMS')]),
+#                           (functional_run, nii2dcm, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'nifti_file')]),
                            
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
                            (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
                            (coregister_T2, datasink, [('coregistered_source', 'volumes.T2')]),
                            (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
-                           (nii2dcm, datasink, [('DICOMs', 'neuronav_dicoms.t_maps.thresholded')])
+#                           (nii2dcm, datasink, [('DICOMs', 'neuronav_dicoms.t_maps.thresholded')])
                            ])
     return main_pipeline
 
 if __name__ == '__main__':
     patients = analyze_dicoms(data_dir)
     for patient_info in patients.values():
-        if patient_info['name'] in exclude_patients:
+        if patient_info['StudyID'] in exclude_patients:
             continue
         if 'line_bisection' in patient_info['tasks']:
             patient_info['tasks'].pop('line_bisection')

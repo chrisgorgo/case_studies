@@ -23,6 +23,7 @@ def analyze_dicoms(sdir):
             first_dcm = glob.glob(seq_dir+"/*.dcm")[0]
             ds = dicom.read_file(first_dcm, force=True)
             cur_patient['name'] = ds.PatientsName
+            cur_patient['StudyID'] = ds.StudyID
             if ds.SeriesDescription == "COR 3D IR PREP":
                 cur_patient['T1'] = ds.SeriesNumber
             elif ds.SeriesDescription == "Axial T2":
