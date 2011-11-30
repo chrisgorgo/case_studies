@@ -30,13 +30,17 @@ def analyze_dicoms(sdir):
                 cur_patient['T2'] = ds.SeriesNumber
             elif ds.SeriesDescription == "DTI 64G 2.0 mm isotropic":
                 cur_patient['DWI'] = ds.SeriesNumber
-            if ds.SeriesDescription in ['finger foot lips', 'silent verb generation', 'overt word repetition', 'line bisection']:
-                if 'tasks' not in cur_patient.keys():
-                    cur_patient['tasks'] = {}
-                if ds.SeriesDescription == 'silent verb generation':
-                    cur_patient['tasks']['covert_verb_generation'] = ds.SeriesNumber
-                else:
-                    cur_patient['tasks'][ds.SeriesDescription.replace(" ", "_")] = ds.SeriesNumber
+            print ds.SeriesDescription
+            if ds.SeriesDescription in ['finger foot lips', 'silent verb generation', 'word repetition', 'line bisection']:
+                if len(glob.glob(seq_dir+"/*.dcm")) > 180:
+                    if 'tasks' not in cur_patient.keys():
+                        cur_patient['tasks'] = {}
+                    if ds.SeriesDescription == 'silent verb generation':
+                        cur_patient['tasks']['covert_verb_generation'] = ds.SeriesNumber
+                    elif ds.SeriesDescription == 'word repetition':
+                        cur_patient['tasks']['overt_word_repetition'] = ds.SeriesNumber
+                    else:
+                        cur_patient['tasks'][ds.SeriesDescription.replace(" ", "_")] = ds.SeriesNumber
         
         
         patients[cur_patient['name']] = cur_patient

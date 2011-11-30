@@ -156,11 +156,6 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     coregister_to_DWI.inputs.jobtype = 'estwrite'
     coregister_to_DWI.inputs.write_interp = 0
     
-#    nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
-#                         name="nii2dcm")
-#    nii2dcm.inputs.overlay = True
-#    nii2dcm.inputs.UID_suffix = 100
-    
     main_pipeline.connect([(T12nii, coregister_T2, [('reoriented_files', 'target')]),
                            (T22nii, coregister_T2, [('converted_files', 'source')]),
                            
@@ -192,25 +187,90 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (coregister_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_func_and_T2')]),
                            (coregister_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
                            
-#                           (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
-#                           (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
-#                           (struct_datasource, nii2dcm, [('T1', 'template_DICOMS')]),
-#                           (functional_run, nii2dcm, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'nifti_file')]),
-                           
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
                            (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
                            (coregister_T2, datasink, [('coregistered_source', 'volumes.T2')]),
                            (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
-#                           (nii2dcm, datasink, [('DICOMs', 'neuronav_dicoms.t_maps.thresholded')])
                            ])
-    return main_pipeline
+    
+    dicom_pipeline = pe.Workflow(name="pipeline")
+    dicom_pipeline.base_dir = os.path.join(secure_dir, patient_info['name'].replace(" ", "_"))
+    
+    nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
+                         name="nii2dcm")
+    nii2dcm.inputs.overlay = True
+    nii2dcm.inputs.UID_suffix = 100
+    
+    tasks_infosource = pe.Node(interface=util.IdentityInterface(fields=['task_name']),
+                               name="tasks_infosource")
+    tasks_infosource.iterables = ('task_name', patient_info['tasks'].keys())
+    
+    thr_method_infosource = pe.Node(interface=util.IdentityInterface(fields=['thr_method']),
+                                    name="thr_method_infosource")
+    thr_method_infosource.iterables = ('thr_method', thr_methods)
+    
+    func_datasource = pe.Node(interface=nio.DataGrabber(infields=['subject_subdir', 
+                                                                  'seq_no'],
+                                                   outfields=['func']),
+                              name = 'func_datasource')
+    
+    func_datasource.inputs.base_directory = data_dir
+    func_datasource.inputs.template = '%s/%d/*.dcm'
+    func_datasource.inputs.template_args = dict(func = [['subject_subdir', 
+                                                         'seq_no']])
+    func_datasource.inputs.subject_subdir = patient_info['subdir']
+    
+    get_seq_no = pe.Node(interface=util.Function(input_names=['patient_info', 
+                                                              'task_name'], 
+                                                 output_names=['seq_no'],
+                                                 function = task_name2_seq_no),
+                         name="get_seq_no")
+    get_seq_no.inputs.patient_info = patient_info
+    
+    dicom_pipeline.connect([(tasks_infosource, get_seq_no, [('task_name','task_name')]),
+                           (get_seq_no, func_datasource, [('seq_no', 'seq_no')])])
+    
+    struct_datasource = pe.Node(interface=util.IdentityInterface(fields=['T1']),
+                         name = 'struct_datasource')
+    struct_datasource.inputs.T1 = glob.glob(os.path.join(data_dir, 
+                                                         patient_info['subdir'], 
+                                                         str(patient_info['T1'])) + "/*.dcm")
+    
+    t_maps_datasource = pe.Node(interface=nio.DataGrabber(infields=['identifier', 
+                                                                    'task_name',
+                                                                    'thr_method'],
+                                                   outfields=['t_maps']),
+                         name = 't_maps_datasource')
+    
+    t_maps_datasource.inputs.base_directory = results_dir
+    t_maps_datasource.inputs.template = '%s/volumes/t_maps/thresholded/_task_name_%s/_thr_method_%s/_reslice_overlay*/*.img'
+    t_maps_datasource.inputs.template_args = dict(t_maps = [['identifier', 
+                                                                    'task_name',
+                                                                    'thr_method']],
+                                           )
+    t_maps_datasource.inputs.identifier = identifier
+    
+    dicom_pipeline.connect([
+                           
+                           (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
+                           (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
+                           (struct_datasource, nii2dcm, [('T1', 'template_DICOMS')]),
+                           (tasks_infosource, t_maps_datasource, [('task_name', 'task_name')]),
+                           (thr_method_infosource, t_maps_datasource, [('thr_method', 'thr_method')]),
+                           (t_maps_datasource, nii2dcm, [('t_maps', 'nifti_file')]),
+                           ])
+
+    
+    return main_pipeline, dicom_pipeline
 
 if __name__ == '__main__':
     patients = analyze_dicoms(data_dir)
     for patient_info in patients.values():
         if int(patient_info['StudyID']) in exclude_patients:
             continue
-        main_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
+        main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
         main_pipeline.write_graph()
+        secure_pipeline.run(plugin_args={'n_procs': 4})
+        secure_pipeline.write_graph()
