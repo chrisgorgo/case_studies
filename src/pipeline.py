@@ -3,7 +3,7 @@ import nipype.pipeline.engine as pe          # pypeline engine
 import nipype.interfaces.io as nio           # Data i/o
 import nipype.interfaces.spm as spm
 import nipype.interfaces.matlab as mlab      # how to run matlab
-from helper_functions import create_pipeline_functional_run
+from helper_functions import create_pipeline_functional_run, create_dti_workflow
 
 from variables import *
 from exclude_patients import exclude_patients
@@ -38,6 +38,10 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                                                          'seq_no']],
                                            )
     func_datasource.inputs.subject_subdir = patient_info['subdir']
+    
+    log_datasource = pe.Node(interface=util.IdentityInterface(fields=['line_bisection_log']),
+                     name = 'log_datasource')
+    log_datasource.inputs.line_bisection_log = log_dir + "/" + str(patient_info['StudyID']) + "-Line_Bisection.log"
     
     def task_name2_seq_no(patient_info, task_name):
         return patient_info['tasks'][task_name]
@@ -90,6 +94,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     struct_datasource.inputs.sort_filelist = True
     
     functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
+    
+    dti_processing = create_dti_workflow()
 
     datasink = pe.Node(interface = nio.DataSink(), name='datasink')
     datasink.inputs.base_directory = os.path.join(results_dir, identifier)
@@ -101,9 +107,15 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
         from variables import design_parameters
         return design_parameters[task_name]['conditions']
         
-    def getOnsets(task_name):
-        from variables import design_parameters
-        return design_parameters[task_name]['onsets']
+    def getOnsets(task_name, line_bisection_log, delay):
+        if task_name == "line_bisection":
+            from parse_line_bisection_log import parse_line_bisection_log
+            _,_,correct_pictures, incorrect_pictures, noresponse_pictures = parse_line_bisection_log(line_bisection_log, delay)
+            return [correct_pictures["task"], incorrect_pictures["task"], noresponse_pictures["task"],
+                    correct_pictures["rest"], incorrect_pictures["rest"], noresponse_pictures["rest"]]
+        else:
+            from variables import design_parameters
+            return design_parameters[task_name]['onsets']
         
     def getDurations(task_name):
         from variables import design_parameters
@@ -138,6 +150,12 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     coregister_T2 = pe.Node(interface=spm.Coregister(), name="coregister_T2")
     coregister_T2.inputs.jobtype="estwrite"
     
+    merge = pe.Node(util.Merge(2), name="merge")
+    
+    coregister_to_DWI = pe.Node(spm.Coregister(), name="coregister_to_DWI")
+    coregister_to_DWI.inputs.jobtype = 'estwrite'
+    coregister_to_DWI.inputs.write_interp = 0
+    
 #    nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
 #                         name="nii2dcm")
 #    nii2dcm.inputs.overlay = True
@@ -155,9 +173,24 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                                                                 (('task_name', getTR), 'inputnode.TR'),
                                                                 (('task_name', getContrasts), 'inputnode.contrasts'),
                                                                 (('task_name', getUnits), 'inputnode.units'),
-                                                                (('task_name', getOnsets), 'inputnode.onsets'),
                                                                 (('task_name', getSparse), 'inputnode.sparse'),
-                                                                ('task_name', 'inputnode.task_name')]),                     
+                                                                ('task_name', 'inputnode.task_name')]),     
+                           (tasks_infosource, get_onsets, [('task_name', 'task_name')]),
+                           (log_datasource, get_onsets, [('line_bisection_log', 'line_bisection_log')]),
+                           (get_onsets, functional_run, [('onsets', 'inputnode.onsets')]),     
+                           
+                           (DWI2nii, dti_processing, [('converted_files', 'inputnode.dwi'),
+                                                      ('bvals', 'inputnode.bvals'),
+                                                      ('bvecs', 'inputnode.bvecs')]),
+                           (dti_processing, datasink, [('spline_clean.smoothed_track_file', 'DTI.trk')]),
+                           
+                           (functional_run, merge, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'in1')]),
+                           (coregister_T2, merge, [('coregistered_source', 'in2')]),
+                           (T12nii, coregister_to_DWI, [('reoriented_files', 'source')]),
+                           (merge, coregister_to_DWI, [('out', 'apply_to_files')]),
+                           (dti_processing, coregister_to_DWI, [('eddie_correct.pick_ref.out', 'target')]),
+                           (coregister_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_func_and_T2')]),
+                           (coregister_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
                            
 #                           (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
 #                           (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
@@ -176,10 +209,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
 if __name__ == '__main__':
     patients = analyze_dicoms(data_dir)
     for patient_info in patients.values():
-        if patient_info['StudyID'] in exclude_patients:
+        if int(patient_info['StudyID']) in exclude_patients:
             continue
-        if 'line_bisection' in patient_info['tasks']:
-            patient_info['tasks'].pop('line_bisection')
         main_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
         main_pipeline.write_graph()
