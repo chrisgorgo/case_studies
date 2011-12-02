@@ -12,6 +12,8 @@ from neuroutils.nii2dcm import Nifti2DICOM
 from analyze_dicoms import analyze_dicoms
 import glob
 from nipype.interfaces.dcm2nii import Dcm2nii
+import json
+from nipype.interfaces import fsl
 
 mlab.MatlabCommand.set_default_paths("/usr/share/spm8/")
 
@@ -146,18 +148,20 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                                                         function=getOnsets),
                          name="get_onsets")
     get_onsets.inputs.delay = 4*2.5
+    
+    
 
-    coregister_T2 = pe.Node(interface=spm.Coregister(), name="coregister_T2")
-    coregister_T2.inputs.jobtype="estwrite"
+    coregister_T2_to_T1 = pe.Node(interface=spm.Coregister(), name="coregister_T2_to_T1")
+    coregister_T2_to_T1.inputs.jobtype="estwrite"
     
-    merge = pe.Node(util.Merge(2), name="merge")
+    coregister_T2_to_DWI = pe.Node(spm.Coregister(), name="coregister_T2_to_DWI")
+    coregister_T2_to_DWI.inputs.jobtype="estwrite"
+    coregister_t_maps_to_DWI = pe.Node(spm.Coregister(), name="coregister_t_maps_to_DWI")
+    coregister_t_maps_to_DWI.inputs.jobtype="estwrite"
+    coregister_t_maps_to_DWI.inputs.write_interp = 0
     
-    coregister_to_DWI = pe.Node(spm.Coregister(), name="coregister_to_DWI")
-    coregister_to_DWI.inputs.jobtype = 'estwrite'
-    coregister_to_DWI.inputs.write_interp = 0
-    
-    main_pipeline.connect([(T12nii, coregister_T2, [('reoriented_files', 'target')]),
-                           (T22nii, coregister_T2, [('converted_files', 'source')]),
+    main_pipeline.connect([(T12nii, coregister_T2_to_T1, [('reoriented_files', 'target')]),
+                           (T22nii, coregister_T2_to_T1, [('converted_files', 'source')]),
                            
                            (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
                                                                     ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
@@ -177,25 +181,28 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (DWI2nii, dti_processing, [('converted_files', 'inputnode.dwi'),
                                                       ('bvals', 'inputnode.bvals'),
                                                       ('bvecs', 'inputnode.bvecs')]),
-                           (dti_processing, datasink, [('spline_clean.smoothed_track_file', 'DTI.trk')]),
+                           (dti_processing, datasink, [('mrtrix.CSDstreamtrack.tracked', 'DTI.tracts')]),
                            
-                           (functional_run, merge, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'in1')]),
-                           (coregister_T2, merge, [('coregistered_source', 'in2')]),
-                           (T12nii, coregister_to_DWI, [('reoriented_files', 'source')]),
-                           (merge, coregister_to_DWI, [('out', 'apply_to_files')]),
-                           (dti_processing, coregister_to_DWI, [('eddie_correct.pick_ref.out', 'target')]),
-                           (coregister_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_func_and_T2')]),
-                           (coregister_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
+                           (T12nii, coregister_T2_to_DWI, [('reoriented_files', 'source')]),
+                           (T12nii, coregister_t_maps_to_DWI, [('reoriented_files', 'source')]),
+                           (coregister_T2_to_T1, coregister_T2_to_DWI, [('coregistered_source', 'apply_to_files')]),
+                           (functional_run, coregister_t_maps_to_DWI, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'apply_to_files')]),
+                           (dti_processing, coregister_T2_to_DWI, [('mrtrix.bet.out_file', 'target')]),
+                           (dti_processing, coregister_t_maps_to_DWI, [('mrtrix.bet.out_file', 'target')]),
+                           
+                           (coregister_T2_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
+                           (coregister_T2_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_T2')]),
+                           (coregister_t_maps_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_t_maps')]),
                            
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
                            (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
-                           (coregister_T2, datasink, [('coregistered_source', 'volumes.T2')]),
+                           (coregister_T2_to_T1, datasink, [('coregistered_source', 'volumes.T2')]),
                            (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
                            ])
     
     dicom_pipeline = pe.Workflow(name="pipeline")
-    dicom_pipeline.base_dir = os.path.join(secure_dir, patient_info['name'].replace(" ", "_"))
+    dicom_pipeline.base_dir = os.path.join(secure_dir, identifier)
     
     nii2dcm = pe.MapNode(interface=Nifti2DICOM(), iterfield=['nifti_file', 'description'], 
                          name="nii2dcm")
@@ -272,5 +279,7 @@ if __name__ == '__main__':
         main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
         main_pipeline.write_graph()
-        secure_pipeline.run(plugin_args={'n_procs': 4})
-        secure_pipeline.write_graph()
+        if not skip_secure:
+            secure_pipeline.run(plugin_args={'n_procs': 4})
+            secure_pipeline.write_graph()
+    json.dump(patients, os.path.join(secure_dir, "info.txt"))

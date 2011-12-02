@@ -510,14 +510,20 @@ def create_dti_workflow(name="dti_workflow"):
     eddie_correct = create_eddy_correct_pipeline(name="eddie_correct")
     eddie_correct.inputs.inputnode.ref_num = 0
     
-    mrtrix = create_mrtrix_dti_pipeline('mrtrix', tractography_type='probabilistic') 
+    mrtrix = create_mrtrix_dti_pipeline('mrtrix', tractography_type='deterministic') 
     gen_WM_mask = mrtrix.get_node("gen_WM_mask")
     csdeconv = mrtrix.get_node("csdeconv")
     mrtrix.disconnect([(gen_WM_mask, csdeconv,[("WMprobabilitymap","mask_image")])])
     bet = mrtrix.get_node("bet")
     mrtrix.connect([(bet, csdeconv,[("mask_file","mask_image")])])
-    mrtrix.inputs.CSDstreamtrack.desired_number_of_tracks = 40000
+    mrtrix.inputs.CSDstreamtrack.desired_number_of_tracks = 20000
+    mrtrix.inputs.CSDstreamtrack.minimum_radius_of_curvature = 2
+    mrtrix.inputs.CSDstreamtrack.minimum_tract_length = 20
+    mrtrix.inputs.CSDstreamtrack.cutoff_value = 0.2
     mrtrix.inputs.fsl2mrtrix.invert_z = True
+    mrtrix.inputs.bet.frac = 0.7
+    mrtrix.inputs.estimateresponse.maximum_harmonic_order = 10
+    mrtrix.inputs.csdeconv.maximum_harmonic_order = 10
     
     spline_clean = pe.Node(interface=dt.SplineFilter(step_length=0.5), name="spline_clean")
     
