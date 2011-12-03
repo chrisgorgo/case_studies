@@ -248,7 +248,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                                                                     'task_name',
                                                                     'thr_method'],
                                                    outfields=['t_maps']),
-                         name = 't_maps_datasource')
+                         name = 't_maps_datasource',
+                         overwrite=True)
     
     t_maps_datasource.inputs.base_directory = results_dir
     t_maps_datasource.inputs.template = '%s/volumes/t_maps/thresholded/_task_name_%s/_thr_method_%s/_reslice_overlay*/*.img'
@@ -272,14 +273,12 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     return main_pipeline, dicom_pipeline
 
 if __name__ == '__main__':
-    patients = analyze_dicoms(data_dir)
+    patients = analyze_dicoms(data_dir, exclude_patients)
     for patient_info in patients.values():
-        if int(patient_info['StudyID']) in exclude_patients:
-            continue
         main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
         main_pipeline.write_graph()
         if not skip_secure:
             secure_pipeline.run(plugin_args={'n_procs': 4})
             secure_pipeline.write_graph()
-    json.dump(patients, os.path.join(secure_dir, "info.txt"))
+    json.dump(patients, open(os.path.join(secure_dir, "info.txt"),'w'))
