@@ -89,6 +89,31 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     DWI2nii = func2nii.clone("DWI2nii")
     main_pipeline.connect([(struct_datasource, DWI2nii, [(('DWI', pickFirst), 'source_names')])])
     
+    def ConditionalReslice(in_file, reference_file):
+        import nibabel as nb
+        nii = nb.load(in_file)
+        if nii.get_shape()[0] != 128 or nii.get_shape()[1] != 128:
+            import nipype.pipeline.engine as pe
+            import nipype.interfaces.spm as spm
+            import os
+            reslice = pe.Node(spm.Coregister(), name='reslice')
+            reslice.inputs.source = in_file
+            reslice.inputs.target = reference_file
+            reslice.inputs.jobtype = 'write'
+            reslice.base_dir = os.getcwd()
+            results = reslice.run()
+            return results.outputs.coregistered_source
+            
+        else:
+            return in_file
+        
+    cond_reslice = pe.Node(interface=util.Function(input_names=['in_file', 
+                                                                 'reference_file'], 
+                                                   output_names = ['out_file'], 
+                                                   function = ConditionalReslice),
+                           name = 'cond_reslice')
+    cond_reslice.inputs.reference_file = os.path.join(results_dir, 'dwi_reference.nii')
+    
     thr_method_infosource = pe.Node(interface=util.IdentityInterface(fields=['thr_method']),
                                   name="thr_method_infosource")
     thr_method_infosource.iterables = ('thr_method', thr_methods)
@@ -178,8 +203,9 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (log_datasource, get_onsets, [('line_bisection_log', 'line_bisection_log')]),
                            (get_onsets, functional_run, [('onsets', 'inputnode.onsets')]),     
                            
-                           (DWI2nii, dti_processing, [('converted_files', 'inputnode.dwi'),
-                                                      ('bvals', 'inputnode.bvals'),
+                           (DWI2nii, cond_reslice, [('converted_files', 'in_file')]),
+                           (cond_reslice, dti_processing, [('out_file', 'inputnode.dwi')]),
+                           (DWI2nii, dti_processing, [('bvals', 'inputnode.bvals'),
                                                       ('bvecs', 'inputnode.bvecs')]),
                            (dti_processing, datasink, [('mrtrix.CSDstreamtrack.tracked', 'DTI.tracts')]),
                            
