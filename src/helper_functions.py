@@ -517,8 +517,8 @@ def create_dti_workflow(name="dti_workflow"):
     bet = mrtrix.get_node("bet")
     mrtrix.connect([(bet, csdeconv,[("mask_file","mask_image")])])
     mrtrix.inputs.CSDstreamtrack.desired_number_of_tracks = 20000
-    mrtrix.inputs.CSDstreamtrack.minimum_radius_of_curvature = 2
-    mrtrix.inputs.CSDstreamtrack.minimum_tract_length = 20
+    #mrtrix.inputs.CSDstreamtrack.minimum_radius_of_curvature = 2
+    mrtrix.inputs.CSDstreamtrack.minimum_tract_length = 40
     mrtrix.inputs.CSDstreamtrack.cutoff_value = 0.2
     mrtrix.inputs.fsl2mrtrix.invert_z = True
     mrtrix.inputs.bet.frac = 0.7
