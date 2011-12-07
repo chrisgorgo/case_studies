@@ -514,7 +514,7 @@ def create_dti_workflow(name="dti_workflow"):
     gen_WM_mask = mrtrix.get_node("gen_WM_mask")
     csdeconv = mrtrix.get_node("csdeconv")
     mrtrix_inputnode = mrtrix.get_node("inputnode")
-    mrtrix_outputnode = mrtrix.get_node("inputnode")
+    mrtrix_outputnode = mrtrix.get_node("outputnode")
     tck2trk = mrtrix.get_node("tck2trk")
     CSDstreamtrack = mrtrix.get_node("CSDstreamtrack")
     mrtrix.disconnect([(CSDstreamtrack, tck2trk,[("tracked","in_file")])])
