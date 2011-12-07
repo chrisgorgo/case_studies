@@ -173,7 +173,7 @@ def _get_microtime_resolution(volume, sparse):
     if isinstance(volume,list) and len(volume) == 1:
         volume = volume[0]
     nii = nb.load(volume)
-    n_slices = nii.get_shape()[3]
+    n_slices = nii.get_shape()[2]
     if sparse:
         return n_slices*2
     else:
