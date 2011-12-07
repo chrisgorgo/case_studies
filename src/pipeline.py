@@ -185,8 +185,12 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     coregister_t_maps_to_DWI.inputs.jobtype="estwrite"
     coregister_t_maps_to_DWI.inputs.write_interp = 0
     
+    bet = pe.Node(interface=fsl.BET(), name="bet")
+    
     main_pipeline.connect([(T12nii, coregister_T2_to_T1, [('reoriented_files', 'target')]),
                            (T22nii, coregister_T2_to_T1, [('converted_files', 'source')]),
+                           
+                           (T12nii, bet, [('reoriented_files', 'in_file')]),
                            
                            (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
                                                                     ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
@@ -223,6 +227,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
                            (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
+                           (bet, datasink, [('out_file', 'volumes.T1_no_skull')]),
                            (coregister_T2_to_T1, datasink, [('coregistered_source', 'volumes.T2')]),
                            (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
                            ])
