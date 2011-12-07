@@ -513,6 +513,13 @@ def create_dti_workflow(name="dti_workflow"):
     mrtrix = create_mrtrix_dti_pipeline('mrtrix', tractography_type='deterministic') 
     gen_WM_mask = mrtrix.get_node("gen_WM_mask")
     csdeconv = mrtrix.get_node("csdeconv")
+    mrtrix_inputnode = mrtrix.get_node("inputnode")
+    mrtrix_outputnode = mrtrix.get_node("inputnode")
+    tck2trk = mrtrix.get_node("tck2trk")
+    CSDstreamtrack = mrtrix.get_node("CSDstreamtrack")
+    mrtrix.disconnect([(CSDstreamtrack, tck2trk,[("tracked","in_file")])])
+    mrtrix.disconnect([(mrtrix_inputnode, tck2trk,[("dwi","image_file")])])
+    mrtrix.disconnect([(tck2trk, mrtrix_outputnode, [("out_file", "tracts_trk")])])
     mrtrix.disconnect([(gen_WM_mask, csdeconv,[("WMprobabilitymap","mask_image")])])
     bet = mrtrix.get_node("bet")
     mrtrix.connect([(bet, csdeconv,[("mask_file","mask_image")])])
@@ -534,7 +541,7 @@ def create_dti_workflow(name="dti_workflow"):
                      (inputnode, mrtrix, [('bvals','inputnode.bvals'),
                                          ('bvecs','inputnode.bvecs')]),
                      (eddie_correct, mrtrix, [('outputnode.eddy_corrected', 'inputnode.dwi')]),
-                     (mrtrix, spline_clean, [('outputnode.tracts_trk', 'track_file')])
+#                     (mrtrix, spline_clean, [('outputnode.tracts_trk', 'track_file')])
                     ])
     return dwiproc
 
