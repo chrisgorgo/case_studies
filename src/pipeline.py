@@ -124,8 +124,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
     
     dti_processing = create_dti_workflow()
-    if patient_info['StudyID'] in dwi_bet_thr:
-        dti_processing.inputs.bet.frac = dwi_bet_thr[patient_info['StudyID']]
+    if int(patient_info['StudyID']) in dwi_bet_thr:
+        dti_processing.inputs.mrtrix.bet.frac = dwi_bet_thr[patient_info['StudyID']]
 
     datasink = pe.Node(interface = nio.DataSink(), name='datasink')
     datasink.inputs.base_directory = os.path.join(results_dir, identifier)
