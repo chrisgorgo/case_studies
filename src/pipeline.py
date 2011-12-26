@@ -5,6 +5,7 @@ import nipype.interfaces.spm as spm
 import nipype.interfaces.matlab as mlab      # how to run matlab
 from helper_functions import create_pipeline_functional_run, create_dti_workflow
 
+from patient_variables import *
 from variables import *
 from exclude_patients import exclude_patients
 #from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
@@ -123,6 +124,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
     
     dti_processing = create_dti_workflow()
+    if patient_info['StudyID'] in dwi_bet_thr:
+        dti_processing.inputs.bet.frac = dwi_bet_thr[patient_info['StudyID']]
 
     datasink = pe.Node(interface = nio.DataSink(), name='datasink')
     datasink.inputs.base_directory = os.path.join(results_dir, identifier)
@@ -305,6 +308,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
 
 if __name__ == '__main__':
     patients = analyze_dicoms(data_dir, exclude_patients)
+    if not skip_secure:
+        json.dump(patients, open(os.path.join(secure_dir, "info.txt"),'w'))
     for patient_info in patients.values():
         main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
@@ -312,4 +317,3 @@ if __name__ == '__main__':
         if not skip_secure:
             secure_pipeline.run(plugin_args={'n_procs': 4})
             secure_pipeline.write_graph()
-    json.dump(patients, open(os.path.join(secure_dir, "info.txt"),'w'))
