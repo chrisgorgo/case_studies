@@ -36,7 +36,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                          name = 'func_datasource')
     
     func_datasource.inputs.base_directory = data_dir
-    func_datasource.inputs.template = '%s/%d/*.dcm'
+    func_datasource.inputs.template = '%s/%s/*.dcm'
     func_datasource.inputs.template_args = dict(func = [['subject_subdir', 
                                                          'seq_no']],
                                            )
@@ -257,7 +257,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                               name = 'func_datasource')
     
     func_datasource.inputs.base_directory = data_dir
-    func_datasource.inputs.template = '%s/%d/*.dcm'
+    func_datasource.inputs.template = '%s/%s/*.dcm'
     func_datasource.inputs.template_args = dict(func = [['subject_subdir', 
                                                          'seq_no']])
     func_datasource.inputs.subject_subdir = patient_info['subdir']
