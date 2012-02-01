@@ -20,8 +20,11 @@ def analyze_dicoms(sdir, exclude):
     
     patients = {}
     for subject in os.listdir(sdir):
+        if not os.path.isdir(os.path.join(sdir, subject)):
+            continue
         if int(subject.split("_")[-1]) in [int(s) for s in exclude]:
             continue
+
         cur_patient = {}
         subdirs = os.listdir(os.path.join(sdir, subject))
         assert len(subdirs) == 1
