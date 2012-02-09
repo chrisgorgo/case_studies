@@ -97,6 +97,8 @@ def create_preproc_func_pipeline():#ref_slice, n_skip=4, n_slices=30, tr=2.5, sp
     art.inputs.zintensity_threshold = 3
     art.inputs.mask_type            = 'file'
     art.inputs.parameter_source     = 'SPM'
+    art.inputs.save_plot            = True
+    art.inputs.plot_type            = 'pdf'
     
     compute_mask = pe.Node(interface=ComputeMask(), name="compute_mask")
     
@@ -180,8 +182,15 @@ def _get_microtime_resolution(volume, sparse):
         return n_slices
 
 def create_model_fit_pipeline(high_pass_filter_cutoff=128, nipy = False, ar1 = True, name="model", save_residuals=False):
-    inputnode = pe.Node(interface=util.IdentityInterface(fields=['outlier_files', "realignment_parameters", "functional_runs", "mask",
-                                                                 'conditions','onsets','durations','TR','contrasts','units','sparse']), name="inputnode")
+    
+    def ret_copy(outlier_files, realignment_parameters, functional_runs, mask, 
+                 conditions,onsets,durations,TR,contrasts,units,sparse):
+        return outlier_files, realignment_parameters, functional_runs, mask, conditions,onsets,durations,TR,contrasts,units,sparse
+                                                                 
+    inputnode = pe.Node(interface=util.Function(input_names=['outlier_files', "realignment_parameters", "functional_runs", "mask",
+                                                                 'conditions','onsets','durations','TR','contrasts','units','sparse'],
+                                                output_names=['outlier_files', "realignment_parameters", "functional_runs", "mask",
+                                                                 'conditions','onsets','durations','TR','contrasts','units','sparse'], function=ret_copy), name="inputnode")
     
     
     modelspec = pe.Node(interface=model.SpecifySPMModel(), name= "modelspec")
@@ -299,29 +308,40 @@ def create_model_fit_pipeline(high_pass_filter_cutoff=128, nipy = False, ar1 = T
         contrastestimate = pe.Node(interface = spm.EstimateContrast(), name="contrastestimate")
         rename_t_maps = pe.MapNode(interface = Rename(format_string="%(contrast_name)s_t_map", keep_ext=True), name="rename_t_maps", iterfield=['in_file', 'contrast_name'] )
         #contrastestimate.inputs.contrasts = contrasts
+
         
-        threshold_topo_fdr = pe.MapNode(interface= spm.Threshold(), 
-                                        name="threshold_topo_fdr", 
-                                        iterfield=['contrast_index', 'stat_image'])
+        threshold_topo_fdr_005_FWE = pe.MapNode(interface=spm.Threshold(),
+                                       name="threshold_topo_fdr_005_FWE",
+                                    iterfield=['contrast_index', 'stat_image'])
+        threshold_topo_fdr_005_FWE.inputs.use_fwe_correction = True
+        threshold_topo_fdr_005_FWE.inputs.height_threshold = 0.05
+        
+        threshold_topo_fdr_0001 = pe.MapNode(interface=spm.Threshold(),
+                                       name="threshold_topo_fdr_0001",
+                                    iterfield=['contrast_index', 'stat_image'])
+        threshold_topo_fdr_0001.inputs.use_fwe_correction = False
+        threshold_topo_fdr_0001.inputs.height_threshold = 0.001
+            
         #threshold_topo_fdr.inputs.contrast_index = range(1,len(contrasts)+1)
         
         threshold_topo_ggmm = neuroutils.CreateTopoFDRwithGGMM("threshold_topo_ggmm")
         threshold_topo_ggmm.inputs.ggmm.models = ['no_signal',
-                                            'noise_and_activation',
-                                            'noise_activation_and_deactivation']
+                                                  'noise_and_activation',
+                                                  'noise_activation_and_deactivation']
         #threshold_topo_ggmm.inputs.inputnode.contrast_index = range(1,len(contrasts)+1)
         
-        merge_thr_methods = pe.MapNode(interface=utility.Merge(2),
-                         name='merge_thr_methods', iterfield=['in1', 'in2'])
-        model_pipeline.connect(threshold_topo_fdr, 'thresholded_map', merge_thr_methods, 'in1')
-        model_pipeline.connect(threshold_topo_ggmm, 'topo_fdr.thresholded_map', merge_thr_methods, 'in2')
+        merge_thr_methods = pe.MapNode(interface=utility.Merge(3),
+                         name='merge_thr_methods', iterfield=['in1', 'in2', 'in3'])
+        model_pipeline.connect(threshold_topo_fdr_005_FWE, 'thresholded_map', merge_thr_methods, 'in1')
+        model_pipeline.connect(threshold_topo_fdr_0001, 'thresholded_map', merge_thr_methods, 'in2')
+        model_pipeline.connect(threshold_topo_ggmm, 'topo_fdr.thresholded_map', merge_thr_methods, 'in3')
         select_thr_method = pe.MapNode(interface=utility.Select(), name="select_thr_method", iterfield=['inlist'])
         model_pipeline.connect(merge_thr_methods, 'out', select_thr_method, 'inlist')
         
         thr_method_inputspec = pe.Node(interface=utility.IdentityInterface(fields=["thr_method"]), name="thr_method_inputspec")
         
         def chooseindex(thr_method):
-            return {"topo_fdr":0, "topo_ggmm":1}[thr_method]
+            return {"topo_fdr_0.05_FWE":0, "topo_fdr_0.001":1, "topo_ggmm":2}[thr_method]
     
         model_pipeline.connect(thr_method_inputspec, ("thr_method", chooseindex), select_thr_method, 'index')
         
@@ -349,9 +369,13 @@ def create_model_fit_pipeline(high_pass_filter_cutoff=128, nipy = False, ar1 = T
                                 (contrastestimate, rename_t_maps, [('spmT_images', 'in_file')]),
                                 (inputnode, rename_t_maps, [(('contrasts',getLabels), 'contrast_name')]),
                                 
-                                (contrastestimate, threshold_topo_fdr, [('spm_mat_file','spm_mat_file')]),
-                                (rename_t_maps, threshold_topo_fdr , [('out_file', 'stat_image')]),
-                                (inputnode, threshold_topo_fdr, [(('contrasts', _get_contrast_index), 'contrast_index')]),
+                                (contrastestimate, threshold_topo_fdr_005_FWE, [('spm_mat_file','spm_mat_file')]),
+                                (rename_t_maps, threshold_topo_fdr_005_FWE , [('out_file', 'stat_image')]),
+                                (inputnode, threshold_topo_fdr_005_FWE, [(('contrasts', _get_contrast_index), 'contrast_index')]),
+                                
+                                (contrastestimate, threshold_topo_fdr_0001, [('spm_mat_file','spm_mat_file')]),
+                                (rename_t_maps, threshold_topo_fdr_0001 , [('out_file', 'stat_image')]),
+                                (inputnode, threshold_topo_fdr_0001, [(('contrasts', _get_contrast_index), 'contrast_index')]),
                                 
                                 (level1estimate, threshold_topo_ggmm, [('mask_image','inputnode.mask_file')]),
                                 (contrastestimate, threshold_topo_ggmm, [('spm_mat_file','inputnode.spm_mat_file')]),
@@ -408,15 +432,15 @@ def create_visualise_overlay(name, masked=False):#, contrasts):
     return visualise_overlay
 
 def create_report_pipeline(pipeline_name="report"):#, contrasts):
-    inputnode = pe.Node(interface=util.IdentityInterface(fields=['struct', "raw_stat_images", "thresholded_stat_images", "mask", "realignment_parameters", 'outlier_files', 'contrasts', 'task_name']), name="inputnode")
+    inputnode = pe.Node(interface=util.IdentityInterface(fields=['struct', "raw_stat_images", "mask", "art_plot", 'contrasts', 'task_name']), name="inputnode")
     
     visualise_unthresholded_stat = create_visualise_overlay(name="visualise_unthresholded_stat", masked=True)
-    visualise_thresholded_stat = create_visualise_overlay(name="visualise_thresholded_stat", masked=False)
-    plot_realign = pe.Node(interface=neuroutils.PlotRealignemntParameters(), name="plot_realign")
+    #visualise_thresholded_stat = create_visualise_overlay(name="visualise_thresholded_stat", masked=False)
+    #plot_realign = pe.Node(interface=neuroutils.PlotRealignemntParameters(), name="plot_realign")
     
     psmerge_all = pe.Node(interface = neuroutils.PsMerge(), name = "psmerge_all")
-    psmerge_all.inputs.out_file = "merged.pdf"
-    mergeinputs = pe.Node(interface=Merge(5), name="mergeinputs")
+    psmerge_all.inputs.out_file = "motion_parameters_and_unthresholded_t_maps.pdf"
+    mergeinputs = pe.Node(interface=Merge(2), name="mergeinputs")
     
     report = pe.Workflow(name="report")
     
@@ -426,23 +450,24 @@ def create_report_pipeline(pipeline_name="report"):#, contrasts):
                                                      ("mask", "inputnode.mask"),
                                                      ('contrasts', 'inputnode.contrasts'),
                                                      ('task_name', 'inputnode.task_name')]),
-                    (inputnode, visualise_thresholded_stat, [("struct", "inputnode.background"),
-                                                             ("thresholded_stat_images", "inputnode.overlays"),
-                                                             #("ggmm_thresholded_stat_images", "inputnode.ggmm_overlays"),
-                                                             ('contrasts', 'inputnode.contrasts'),
-                                                             ('task_name', 'inputnode.task_name')]),
+#                    (inputnode, visualise_thresholded_stat, [("struct", "inputnode.background"),
+#                                                             ("thresholded_stat_images", "inputnode.overlays"),
+#                                                             #("ggmm_thresholded_stat_images", "inputnode.ggmm_overlays"),
+#                                                             ('contrasts', 'inputnode.contrasts'),
+#                                                             ('task_name', 'inputnode.task_name')]),
                     
-                    (inputnode, plot_realign, [('realignment_parameters', 'realignment_parameters'),
-                                               ('outlier_files', 'outlier_files')]),
+#                    (inputnode, plot_realign, [('realignment_parameters', 'realignment_parameters'),
+#                                               ('outlier_files', 'outlier_files')]),
                                                              
                     (visualise_unthresholded_stat, mergeinputs, [("plot.plot", "in2")]),
-                    (visualise_thresholded_stat, mergeinputs, [("plot.plot", "in3")]),
+#                    (visualise_thresholded_stat, mergeinputs, [("plot.plot", "in3")]),
                     #(inputnode, mergeinputs, [('ggmm_hist', 'in4')]),
 #                    (thresholded_stat_visualise, mergeinputs, [("plot_ggmm.plot", "in5")]),
-                    (plot_realign, mergeinputs, [("plot", "in1")]),                                
+                    (inputnode, mergeinputs, [("art_plot", "in1")]),                                
                     (mergeinputs, psmerge_all, [("out", "in_files")]),                                
                     ])
     return report
+
 
 def create_pipeline_functional_run(name="functional_run", series_format="3d"):#, conditions, onsets, durations, tr, contrasts, units='scans', n_slices=30, sparse=False, n_skip=4):
     
@@ -459,7 +484,12 @@ def create_pipeline_functional_run(name="functional_run", series_format="3d"):#,
     
     model_pipeline = create_model_fit_pipeline()#contrasts=contrasts, conditions=conditions, onsets=onsets, durations=durations, tr=tr, units=units, n_slices=n_slices, sparse=sparse, ref_slice= n_slices/2)
     
-    report = create_report_pipeline()#pipeline_name=name, contrasts=contrasts)
+    task_report = create_report_pipeline()#pipeline_name=name, contrasts=contrasts)
+    
+    thr_report = create_visualise_overlay(name="visualise_thresholded_stat", masked=False)
+    
+    psmerge_all = pe.Node(interface = neuroutils.PsMerge(), name = "visualise_thresholded_stat_merge")
+    psmerge_all.inputs.out_file = "thresholded_t_maps.pdf"
     
     pipeline = pe.Workflow(name=name)
     
@@ -487,18 +517,22 @@ def create_pipeline_functional_run(name="functional_run", series_format="3d"):#,
                                                    ('sparse', "inputnode.sparse"),
                                                    #('mask_file', 'inputnode.roi_mask')
                                                    ]),
-                      (inputnode, report, [("struct", "inputnode.struct"),
+                      (inputnode, task_report, [("struct", "inputnode.struct"),
                                             ("contrasts", "inputnode.contrasts"),
                                            ('task_name', 'inputnode.task_name')]),
-                      (model_pipeline, report, [("rename_t_maps.out_file","inputnode.raw_stat_images"),
+                      (model_pipeline, task_report, [("rename_t_maps.out_file","inputnode.raw_stat_images"),
                                                 ("level1estimate.mask_image", "inputnode.mask"),
-                                                ("threshold.thresholded_map", "inputnode.thresholded_stat_images"),
+#                                                ("threshold.thresholded_map", "inputnode.thresholded_stat_images"),
 #                                                ("threshold_topo_ggmm.topo_fdr.thresholded_map", "inputnode.ggmm_thresholded_stat_images"),
 #                                                ("threshold_topo_ggmm.ggmm.histogram", "inputnode.ggmm_hist")
                                                 ]),
+                      (inputnode, thr_report, [("struct", "inputnode.background"),
+                                                ('contrasts', 'inputnode.contrasts'),
+                                                ('task_name', 'inputnode.task_name')]),
+                      (model_pipeline, thr_report, [("threshold.thresholded_map", "inputnode.overlays")]),
+                      (thr_report, psmerge_all, [('plot.plot', 'in_files')]),
                       
-                      (preproc_func, report,[("outputnode.realignment_parameters","inputnode.realignment_parameters"),
-                                             ('art.outlier_files', 'inputnode.outlier_files')]),
+                      (preproc_func, task_report,[('art.plot_files', 'inputnode.art_plot')]),
 #                      
                       ])
     return pipeline

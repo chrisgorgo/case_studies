@@ -196,7 +196,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (T12nii, bet, [('reoriented_files', 'in_file')]),
                            
                            (thr_method_infosource, functional_run, [('thr_method', 'model.thr_method_inputspec.thr_method'),
-                                                                    ('thr_method', 'report.visualise_thresholded_stat.inputnode.prefix')]),
+                                                                    ('thr_method', 'visualise_thresholded_stat.inputnode.prefix')]),
                            (func2nii, functional_run, [("converted_files", "inputnode.func")]),
                            (T12nii, functional_run, [("reoriented_files","inputnode.struct")]),
                            (tasks_infosource, functional_run, [(('task_name', getConditions), 'inputnode.conditions'),
@@ -219,7 +219,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (T12nii, coregister_T2_to_DWI, [('reoriented_files', 'source')]),
                            (T12nii, coregister_t_maps_to_DWI, [('reoriented_files', 'source')]),
                            (coregister_T2_to_T1, coregister_T2_to_DWI, [('coregistered_source', 'apply_to_files')]),
-                           (functional_run, coregister_t_maps_to_DWI, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'apply_to_files')]),
+                           (functional_run, coregister_t_maps_to_DWI, [('visualise_thresholded_stat.reslice_overlay.coregistered_source', 'apply_to_files')]),
                            (dti_processing, coregister_T2_to_DWI, [('mrtrix.bet.out_file', 'target')]),
                            (dti_processing, coregister_t_maps_to_DWI, [('mrtrix.bet.out_file', 'target')]),
                            
@@ -228,11 +228,13 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (coregister_t_maps_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_t_maps')]),
                            
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
-                           (functional_run, datasink, [('report.visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
+                           (functional_run, datasink, [('visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
                            (bet, datasink, [('out_file', 'volumes.T1_no_skull')]),
                            (coregister_T2_to_T1, datasink, [('coregistered_source', 'volumes.T2')]),
                            (functional_run, datasink, [('report.psmerge_all.merged_file', 'reports')]),
+                           (functional_run, datasink, [('visualise_thresholded_stat_merge.merged_file', 'reports.@thr')]),
+                           (functional_run, datasink, [('model.threshold_topo_ggmm.ggmm.histogram', 'reports.@ggmm')]),
                            ])
     
     dicom_pipeline = pe.Workflow(name="pipeline")
@@ -294,7 +296,6 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     t_maps_datasource.inputs.identifier = identifier
     
     dicom_pipeline.connect([
-                           
                            (func_datasource, nii2dcm, [(('func', pickFirst), 'series_info_source_dicom')]),
                            (tasks_infosource,  nii2dcm, [(('task_name',getDicomDesc), 'description')]),
                            (struct_datasource, nii2dcm, [('T1', 'template_DICOMS')]),
@@ -313,7 +314,7 @@ if __name__ == '__main__':
     for patient_info in patients.values():
         main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
         main_pipeline.run(plugin_args={'n_procs': 4})
-        main_pipeline.write_graph()
+        #main_pipeline.write_graph()
         if not skip_secure:
             secure_pipeline.run(plugin_args={'n_procs': 4})
             secure_pipeline.write_graph()
