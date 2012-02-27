@@ -1,7 +1,7 @@
 from nipype.interfaces.base import BaseInterfaceInputSpec, TraitedSpec,\
     BaseInterface
 from nipype.interfaces.traits_extension import File
-import enthought.traits.api as traits
+import traits.api as traits
 
 def parse_line_bisection_log(filename, delay):
     file = open(filename)

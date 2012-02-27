@@ -11,11 +11,12 @@ from nipype.interfaces.utility import Merge, Rename
 from nipype.interfaces.nipy.model import FitGLM, EstimateContrast
 from nipype.interfaces.nipy.preprocess import ComputeMask
 from neuroutils.bootstrapping import PermuteTimeSeries
-from nipype.workflows.fsl import create_bedpostx_pipeline, create_eddy_correct_pipeline, create_susan_smooth
+from nipype.workflows.dmri.fsl.dti import create_bedpostx_pipeline, create_eddy_correct_pipeline
+from nipype.workflows.fmri.fsl.preprocess import create_susan_smooth
 
 import numpy as np
 from nipype.algorithms.misc import PickAtlas
-from nipype.workflows.mrtrix.diffusion import create_mrtrix_dti_pipeline
+from nipype.workflows.dmri.mrtrix.diffusion import create_mrtrix_dti_pipeline
 
 fsl.FSLCommand.set_default_output_type('NIFTI')
 
@@ -550,8 +551,6 @@ def create_dti_workflow(name="dti_workflow"):
     mrtrix.disconnect([(gen_WM_mask, csdeconv,[("WMprobabilitymap","mask_image")])])
     bet = mrtrix.get_node("bet")
     mrtrix.connect([(bet, csdeconv,[("mask_file","mask_image")])])
-    tck2trk = mrtrix.get_node("tck2trk")
-    mrtrix.remove_nodes([tck2trk])
     mrtrix.inputs.CSDstreamtrack.desired_number_of_tracks = 20000
     #mrtrix.inputs.CSDstreamtrack.minimum_radius_of_curvature = 2
     mrtrix.inputs.CSDstreamtrack.minimum_tract_length = 40

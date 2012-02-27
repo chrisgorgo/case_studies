@@ -214,7 +214,8 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (cond_reslice, dti_processing, [('out_file', 'inputnode.dwi')]),
                            (DWI2nii, dti_processing, [('bvals', 'inputnode.bvals'),
                                                       ('bvecs', 'inputnode.bvecs')]),
-                           (dti_processing, datasink, [('mrtrix.CSDstreamtrack.tracked', 'DTI.tracts')]),
+                           (dti_processing, datasink, [('mrtrix.outputnode.tracts_tck', 'DTI.tracts.@tck'),
+                                                       ('mrtrix.outputnode.tracts_trk', 'DTI.tracts.@trk')]),
                            
                            (T12nii, coregister_T2_to_DWI, [('reoriented_files', 'source')]),
                            (T12nii, coregister_t_maps_to_DWI, [('reoriented_files', 'source')]),
