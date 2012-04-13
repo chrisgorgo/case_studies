@@ -18,7 +18,7 @@ from nipype.interfaces import fsl
 
 mlab.MatlabCommand.set_default_paths("/usr/share/spm8/")
 
-def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patient_info):
+def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patient_info, skip_dti = False):
     
     #identifier = patient_info['name'].replace(" ", "_"
     identifier = str(patient_info['StudyID'])
@@ -69,26 +69,31 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     
     main_pipeline.connect([(func_datasource, func2nii, [(('func', pickFirst), 'source_names')])])
     
-    struct_datasource = pe.Node(interface=util.IdentityInterface(fields=['T1', 
-                                                                         'DWI',
-                                                                         'T2']),
-                         name = 'struct_datasource')
+    if skip_dti:
+        struct_datasource = pe.Node(interface=util.IdentityInterface(fields=['T1', 
+                                                                             'T2']),
+                                    name = 'struct_datasource')
+    else:
+        struct_datasource = pe.Node(interface=util.IdentityInterface(fields=['T1',
+                                                                             'DWI',
+                                                                             'T2']),
+                                    name = 'struct_datasource')
+        struct_datasource.inputs.DWI = glob.glob(os.path.join(data_dir, 
+                                                             patient_info['subdir'], 
+                                                             str(patient_info['DWI'])) + "/*.dcm")
     struct_datasource.inputs.T1 = glob.glob(os.path.join(data_dir, 
                                                          patient_info['subdir'], 
                                                          str(patient_info['T1'])) + "/*.dcm")
     struct_datasource.inputs.T2 = glob.glob(os.path.join(data_dir, 
                                                          patient_info['subdir'], 
                                                          str(patient_info['T2'])) + "/*.dcm")
-    struct_datasource.inputs.DWI = glob.glob(os.path.join(data_dir, 
-                                                         patient_info['subdir'], 
-                                                         str(patient_info['DWI'])) + "/*.dcm")
+
     
     T12nii = func2nii.clone("T12nii")
     main_pipeline.connect([(struct_datasource, T12nii, [(('T1', pickFirst), 'source_names')])])
     T22nii = func2nii.clone("T22nii")
     main_pipeline.connect([(struct_datasource, T22nii, [(('T2', pickFirst), 'source_names')])])
-    DWI2nii = func2nii.clone("DWI2nii")
-    main_pipeline.connect([(struct_datasource, DWI2nii, [(('DWI', pickFirst), 'source_names')])])
+
     
     def ConditionalReslice(in_file, reference_file):
         import nibabel as nb
@@ -107,13 +112,6 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
             
         else:
             return in_file
-        
-    cond_reslice = pe.Node(interface=util.Function(input_names=['in_file', 
-                                                                 'reference_file'], 
-                                                   output_names = ['out_file'], 
-                                                   function = ConditionalReslice),
-                           name = 'cond_reslice')
-    cond_reslice.inputs.reference_file = os.path.join(results_dir, 'dwi_reference.nii')
     
     thr_method_infosource = pe.Node(interface=util.IdentityInterface(fields=['thr_method']),
                                   name="thr_method_infosource")
@@ -122,10 +120,6 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     struct_datasource.inputs.sort_filelist = True
     
     functional_run = create_pipeline_functional_run(name="functional_run", series_format="4d")
-    
-    dti_processing = create_dti_workflow()
-    if int(patient_info['StudyID']) in dwi_bet_thr:
-        dti_processing.inputs.mrtrix.bet.frac = dwi_bet_thr[int(patient_info['StudyID'])]
 
     datasink = pe.Node(interface = nio.DataSink(), name='datasink')
     datasink.inputs.base_directory = os.path.join(results_dir, identifier)
@@ -182,12 +176,6 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
     coregister_T2_to_T1 = pe.Node(interface=spm.Coregister(), name="coregister_T2_to_T1")
     coregister_T2_to_T1.inputs.jobtype="estwrite"
     
-    coregister_T2_to_DWI = pe.Node(spm.Coregister(), name="coregister_T2_to_DWI")
-    coregister_T2_to_DWI.inputs.jobtype="estwrite"
-    coregister_t_maps_to_DWI = pe.Node(spm.Coregister(), name="coregister_t_maps_to_DWI")
-    coregister_t_maps_to_DWI.inputs.jobtype="estwrite"
-    coregister_t_maps_to_DWI.inputs.write_interp = 0
-    
     bet = pe.Node(interface=fsl.BET(), name="bet")
     
     main_pipeline.connect([(T12nii, coregister_T2_to_T1, [('reoriented_files', 'target')]),
@@ -209,25 +197,7 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (tasks_infosource, get_onsets, [('task_name', 'task_name')]),
                            (log_datasource, get_onsets, [('line_bisection_log', 'line_bisection_log')]),
                            (get_onsets, functional_run, [('onsets', 'inputnode.onsets')]),     
-                           
-                           (DWI2nii, cond_reslice, [('converted_files', 'in_file')]),
-                           (cond_reslice, dti_processing, [('out_file', 'inputnode.dwi')]),
-                           (DWI2nii, dti_processing, [('bvals', 'inputnode.bvals'),
-                                                      ('bvecs', 'inputnode.bvecs')]),
-                           (dti_processing, datasink, [('mrtrix.outputnode.tracts_tck', 'DTI.tracts.@tck'),
-                                                       ('mrtrix.outputnode.tracts_trk', 'DTI.tracts.@trk')]),
-                           
-                           (T12nii, coregister_T2_to_DWI, [('reoriented_files', 'source')]),
-                           (T12nii, coregister_t_maps_to_DWI, [('reoriented_files', 'source')]),
-                           (coregister_T2_to_T1, coregister_T2_to_DWI, [('coregistered_source', 'apply_to_files')]),
-                           (functional_run, coregister_t_maps_to_DWI, [('visualise_thresholded_stat.reslice_overlay.coregistered_source', 'apply_to_files')]),
-                           (dti_processing, coregister_T2_to_DWI, [('mrtrix.bet.out_file', 'target')]),
-                           (dti_processing, coregister_t_maps_to_DWI, [('mrtrix.bet.out_file', 'target')]),
-                           
-                           (coregister_T2_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
-                           (coregister_T2_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_T2')]),
-                           (coregister_t_maps_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_t_maps')]),
-                           
+
                            (functional_run, datasink, [('report.visualise_unthresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.unthresholded')]),
                            (functional_run, datasink, [('visualise_thresholded_stat.reslice_overlay.coregistered_source', 'volumes.t_maps.thresholded')]),
                            (T12nii, datasink, [('reoriented_files', 'volumes.T1')]),
@@ -237,6 +207,43 @@ def create_process_patient_data_workflow(data_dir, work_dir, results_dir, patien
                            (functional_run, datasink, [('visualise_thresholded_stat_merge.merged_file', 'reports.@thr')]),
                            (functional_run, datasink, [('model.threshold_topo_ggmm.ggmm.histogram', 'reports.@ggmm')]),
                            ])
+    
+    if not skip_dti:
+        DWI2nii = func2nii.clone("DWI2nii")
+        main_pipeline.connect([(struct_datasource, DWI2nii, [(('DWI', pickFirst), 'source_names')])])
+
+        cond_reslice = pe.Node(interface=util.Function(input_names=['in_file', 
+                                                                 'reference_file'], 
+                                                   output_names = ['out_file'], 
+                                                   function = ConditionalReslice),
+                               name = 'cond_reslice')
+        cond_reslice.inputs.reference_file = os.path.join(results_dir, 'dwi_reference.nii')
+
+        dti_processing = create_dti_workflow()
+        if int(patient_info['StudyID']) in dwi_bet_thr:
+            dti_processing.inputs.mrtrix.bet.frac = dwi_bet_thr[int(patient_info['StudyID'])]
+
+        coregister_T2_to_DWI = pe.Node(spm.Coregister(), name="coregister_T2_to_DWI")
+        coregister_T2_to_DWI.inputs.jobtype="estwrite"
+        coregister_t_maps_to_DWI = pe.Node(spm.Coregister(), name="coregister_t_maps_to_DWI")
+        coregister_t_maps_to_DWI.inputs.jobtype="estwrite"
+
+        main_pipeline.connect([(DWI2nii, cond_reslice, [('converted_files', 'in_file')]),
+                               (cond_reslice, dti_processing, [('out_file', 'inputnode.dwi')]),
+                               (DWI2nii, dti_processing, [('bvals', 'inputnode.bvals'),
+                                                          ('bvecs', 'inputnode.bvecs')]),
+                               (dti_processing, datasink, [('mrtrix.outputnode.tracts_tck', 'DTI.tracts.@tck'),
+                                                           ('mrtrix.outputnode.tracts_trk', 'DTI.tracts.@trk')]),
+                               (T12nii, coregister_T2_to_DWI, [('reoriented_files', 'source')]),
+                               (T12nii, coregister_t_maps_to_DWI, [('reoriented_files', 'source')]),
+                               (coregister_T2_to_T1, coregister_T2_to_DWI, [('coregistered_source', 'apply_to_files')]),
+                               (functional_run, coregister_t_maps_to_DWI, [('visualise_thresholded_stat.reslice_overlay.coregistered_source', 'apply_to_files')]),
+                               (dti_processing, coregister_T2_to_DWI, [('mrtrix.bet.out_file', 'target')]),
+                               (dti_processing, coregister_t_maps_to_DWI, [('mrtrix.bet.out_file', 'target')]),
+                               (coregister_T2_to_DWI, datasink, [('coregistered_source', 'DTI.coregistered_T1')]),
+                               (coregister_T2_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_T2')]),
+                               (coregister_t_maps_to_DWI, datasink, [('coregistered_files', 'DTI.coregistered_t_maps')])
+                               ])
     
     dicom_pipeline = pe.Workflow(name="pipeline")
     dicom_pipeline.base_dir = os.path.join(secure_dir, identifier)
@@ -313,7 +320,7 @@ if __name__ == '__main__':
     if not skip_secure:
         json.dump(patients, open(os.path.join(secure_dir, "info.txt"),'w'))
     for patient_info in patients.values():
-        main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info)
+        main_pipeline, secure_pipeline = create_process_patient_data_workflow(data_dir, working_dir, results_dir, patient_info, skip_dti = skip_dti)
         main_pipeline.run(plugin_args={'n_procs': 4})
         #main_pipeline.write_graph()
         if not skip_secure:
